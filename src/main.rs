@@ -194,6 +194,8 @@ fn main() {
                 },
                 XdgToplevel {
                     ver: u32,
+                    title_seen: bool,
+                    app_id_seen: bool,
                 },
             }
 
@@ -228,6 +230,7 @@ fn main() {
                             }).context("Error reading message")? else {
                                 break;
                             };
+                            let mut drop_packet = false;
 
                             // Track and prepare manipulations
                             {
@@ -324,7 +327,11 @@ fn main() {
                                                             ).context(
                                                                 "Error reading xdg surface create toplevel id",
                                                             )?;
-                                                        objects.insert(obj_id, ObjType::XdgToplevel { ver: ver });
+                                                        objects.insert(obj_id, ObjType::XdgToplevel {
+                                                            ver: ver,
+                                                            title_seen: false,
+                                                            app_id_seen: false,
+                                                        });
 
                                                         if let Some(app_id) = &args.app_id {
                                                             let mut body = vec![];
@@ -359,62 +366,86 @@ fn main() {
                                                 _ => panic!("Unsupported xdg_surface object version {}", ver),
                                             }
                                         },
-                                        ObjType::XdgToplevel { ver } => {
+                                        ObjType::XdgToplevel { ver, title_seen, app_id_seen } => {
                                             match ver {
                                                 0 ..= 6 => match packet.opcode {
                                                     // set_title
                                                     2 => {
                                                         if let Some(title) = &args.title {
-                                                            let read_title =
-                                                                read_arg_string(
-                                                                    &mut packet.body.as_slice(),
-                                                                ).context("Error reading app id message body")?;
-                                                            packet.body.clear();
-                                                            proto::write_arg_string(
-                                                                &mut packet.body,
-                                                                if args.prefix_title.is_some() {
-                                                                    format!(
-                                                                        "{}{}",
-                                                                        title,
-                                                                        read_title.unwrap_or_default()
-                                                                    )
-                                                                } else {
-                                                                    title.clone()
-                                                                },
-                                                            ).unwrap();
-                                                            if args.debug.is_some() {
-                                                                eprintln!(
-                                                                    "Modified title; new message: {:?}",
-                                                                    packet
-                                                                );
+                                                            objects.insert(packet.id, ObjType::XdgToplevel {
+                                                                ver: ver,
+                                                                title_seen: true,
+                                                                app_id_seen: app_id_seen,
+                                                            });
+                                                            if !title_seen && args.prefix_title.is_none() {
+                                                                drop_packet = true;
+                                                                if args.debug.is_some() {
+                                                                    eprintln!("Dropping first set_title; new message: {:?}", packet);
+                                                                }
+                                                            } else {
+                                                                let read_title =
+                                                                    read_arg_string(
+                                                                        &mut packet.body.as_slice(),
+                                                                    ).context("Error reading app id message body")?;
+                                                                packet.body.clear();
+                                                                proto::write_arg_string(
+                                                                    &mut packet.body,
+                                                                    if args.prefix_title.is_some() {
+                                                                        format!(
+                                                                            "{}{}",
+                                                                            title,
+                                                                            read_title.unwrap_or_default()
+                                                                        )
+                                                                    } else {
+                                                                        title.clone()
+                                                                    },
+                                                                ).unwrap();
+                                                                if args.debug.is_some() {
+                                                                    eprintln!(
+                                                                        "Modified title; new message: {:?}",
+                                                                        packet
+                                                                    );
+                                                                }
                                                             }
                                                         }
                                                     },
                                                     // set_app_id
                                                     3 => {
                                                         if let Some(app_id) = &args.app_id {
-                                                            let read_app_id =
-                                                                read_arg_string(
-                                                                    &mut packet.body.as_slice(),
-                                                                ).context("Error reading app id message body")?;
-                                                            packet.body.clear();
-                                                            proto::write_arg_string(
-                                                                &mut packet.body,
-                                                                if args.prefix.is_some() {
-                                                                    format!(
-                                                                        "{}{}",
-                                                                        app_id,
-                                                                        read_app_id.unwrap_or_default()
-                                                                    )
-                                                                } else {
-                                                                    app_id.clone()
-                                                                },
-                                                            ).unwrap();
-                                                            if args.debug.is_some() {
-                                                                eprintln!(
-                                                                    "Modified app id; new message: {:?}",
-                                                                    packet
-                                                                );
+                                                            objects.insert(packet.id, ObjType::XdgToplevel {
+                                                                ver: ver,
+                                                                title_seen: title_seen,
+                                                                app_id_seen: true,
+                                                            });
+                                                            if !app_id_seen && args.prefix.is_none() {
+                                                                drop_packet = true;
+                                                                if args.debug.is_some() {
+                                                                    eprintln!("Dropping first set_app_id; new message: {:?}", packet);
+                                                                }
+                                                            } else {
+                                                                let read_app_id =
+                                                                    read_arg_string(
+                                                                        &mut packet.body.as_slice(),
+                                                                    ).context("Error reading app id message body")?;
+                                                                packet.body.clear();
+                                                                proto::write_arg_string(
+                                                                    &mut packet.body,
+                                                                    if args.prefix.is_some() {
+                                                                        format!(
+                                                                            "{}{}",
+                                                                            app_id,
+                                                                            read_app_id.unwrap_or_default()
+                                                                        )
+                                                                    } else {
+                                                                        app_id.clone()
+                                                                    },
+                                                                ).unwrap();
+                                                                if args.debug.is_some() {
+                                                                    eprintln!(
+                                                                        "Modified app id; new message: {:?}",
+                                                                        packet
+                                                                    );
+                                                                }
                                                             }
                                                         }
                                                     },
@@ -428,10 +459,12 @@ fn main() {
                             }
 
                             // Forward message with retractions/additions
-                            proto::write_packet(
-                                &mut AncillaryWriter::new(&mut upstream, &mut ancillary_mem, &ancillary_accum),
-                                &packet,
-                            ).context("Error writing message")?;
+                            if !drop_packet {
+                                proto::write_packet(
+                                    &mut AncillaryWriter::new(&mut upstream, &mut ancillary_mem, &ancillary_accum),
+                                    &packet,
+                                ).context("Error writing message")?;
+                            }
                             for fd in ancillary_accum.drain(..) {
                                 drop(unsafe {
                                     OwnedFd::from_raw_fd(fd)
