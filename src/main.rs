@@ -325,6 +325,34 @@ fn main() {
                                                                 "Error reading xdg surface create toplevel id",
                                                             )?;
                                                         objects.insert(obj_id, ObjType::XdgToplevel { ver: ver });
+
+                                                        if let Some(app_id) = &args.app_id {
+                                                            let mut body = vec![];
+                                                            proto::write_arg_string(
+                                                                &mut body,
+                                                                app_id.clone(),
+                                                            )
+                                                            .unwrap();
+                                                            send_extra.push(proto::Packet {
+                                                                id: obj_id,
+                                                                opcode: 3,
+                                                                body: body,
+                                                            });
+                                                        }
+
+                                                        if let Some(title) = &args.title {
+                                                            let mut body = vec![];
+                                                            proto::write_arg_string(
+                                                                &mut body,
+                                                                title.clone(),
+                                                            )
+                                                            .unwrap();
+                                                            send_extra.push(proto::Packet {
+                                                                id: obj_id,
+                                                                opcode: 2,
+                                                                body: body,
+                                                            });
+                                                        }
                                                     },
                                                     _ => (),
                                                 },
