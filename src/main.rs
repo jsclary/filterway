@@ -64,11 +64,15 @@ struct Args {
     app_id: Option<String>,
     /// Prefix the app id instead of replacing
     prefix: Option<()>,
+    /// Force set app id immediately on toplevel creation
+    always: Option<()>,
     /// Force all xdg toplevels to have the same title
     #[vark(flag = "--title")]
     title: Option<String>,
     /// Prefix the title instead of replacing
     prefix_title: Option<()>,
+    /// Force set title immediately on toplevel creation
+    always_title: Option<()>,
     /// Print debug messages
     debug: Option<()>,
 }
@@ -326,32 +330,36 @@ fn main() {
                                                             )?;
                                                         objects.insert(obj_id, ObjType::XdgToplevel { ver: ver });
 
-                                                        if let Some(app_id) = &args.app_id {
-                                                            let mut body = vec![];
-                                                            proto::write_arg_string(
-                                                                &mut body,
-                                                                app_id.clone(),
-                                                            )
-                                                            .unwrap();
-                                                            send_extra.push(proto::Packet {
-                                                                id: obj_id,
-                                                                opcode: 3,
-                                                                body: body,
-                                                            });
+                                                        if args.always.is_some() {
+                                                            if let Some(app_id) = &args.app_id {
+                                                                let mut body = vec![];
+                                                                proto::write_arg_string(
+                                                                    &mut body,
+                                                                    app_id.clone(),
+                                                                )
+                                                                .unwrap();
+                                                                send_extra.push(proto::Packet {
+                                                                    id: obj_id,
+                                                                    opcode: 3,
+                                                                    body: body,
+                                                                });
+                                                            }
                                                         }
 
-                                                        if let Some(title) = &args.title {
-                                                            let mut body = vec![];
-                                                            proto::write_arg_string(
-                                                                &mut body,
-                                                                title.clone(),
-                                                            )
-                                                            .unwrap();
-                                                            send_extra.push(proto::Packet {
-                                                                id: obj_id,
-                                                                opcode: 2,
-                                                                body: body,
-                                                            });
+                                                        if args.always_title.is_some() {
+                                                            if let Some(title) = &args.title {
+                                                                let mut body = vec![];
+                                                                proto::write_arg_string(
+                                                                    &mut body,
+                                                                    title.clone(),
+                                                                )
+                                                                .unwrap();
+                                                                send_extra.push(proto::Packet {
+                                                                    id: obj_id,
+                                                                    opcode: 2,
+                                                                    body: body,
+                                                                });
+                                                            }
                                                         }
                                                     },
                                                     _ => (),
